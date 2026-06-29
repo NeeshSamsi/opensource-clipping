@@ -12,6 +12,64 @@ from . import diarization as diarization_mod
 from . import engine, metadata, studio, hook_manager
 
 
+# Standard on-disk cache for the Whisper transcript, written next to the other
+# pipeline artifacts in cfg.outputs_dir. Lets a re-run (e.g. after a late-stage
+# render crash) skip the slow transcription stage entirely.
+TRANSCRIPT_CACHE_FILENAME = "transcript_cache.json"
+
+
+def _transcript_signature(cfg) -> dict:
+    """Identity of a transcript: which video + model + word-grouping produced it.
+
+    If any of these change, the cached transcript no longer matches and must be
+    regenerated. Video size (not mtime) is used because the source video is
+    re-downloaded each run, which changes mtime but not content/size.
+    """
+    try:
+        video_size = os.path.getsize(cfg.file_video_asli)
+    except OSError:
+        video_size = 0
+    return {
+        "video_size": video_size,
+        "whisper_model": cfg.whisper_model,
+        "max_words_per_subtitle": cfg.max_kata_per_subtitle,
+    }
+
+
+def _load_transcript_cache(path: str, signature: dict):
+    """Return (transcript, segments) from *path* if present and matching, else None."""
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            payload = json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return None
+    if payload.get("signature") != signature:
+        return None
+    transkrip = payload.get("transkrip_lengkap")
+    segmen = payload.get("data_segmen")
+    if not transkrip or not segmen:
+        return None
+    return transkrip, segmen
+
+
+def _save_transcript_cache(path: str, signature: dict, transkrip_lengkap: str, data_segmen: list) -> None:
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(
+                {
+                    "signature": signature,
+                    "transkrip_lengkap": transkrip_lengkap,
+                    "data_segmen": data_segmen,
+                },
+                f,
+                ensure_ascii=False,
+            )
+    except OSError as e:
+        print(f"⚠️ Failed to write transcript cache ({e}); continuing without it.")
+
+
 def run_pipeline(cfg) -> list[dict]:
     """
     Run the full clipping pipeline:
@@ -70,13 +128,25 @@ def run_pipeline(cfg) -> list[dict]:
                 )
 
     if not transkrip_lengkap or not data_segmen:
-        transkrip_lengkap, data_segmen = engine.transcribe_video(
-            cfg.file_video_asli,
-            max_words_per_subtitle=cfg.max_kata_per_subtitle,
-            model_size=cfg.whisper_model,
-            device=cfg.whisper_device,
-            compute_type=cfg.whisper_compute_type,
-        )
+        # Try the on-disk transcript cache before invoking Whisper, so a re-run
+        # (e.g. after fixing a later-stage crash) doesn't repeat transcription.
+        cache_path = os.path.join(cfg.outputs_dir, TRANSCRIPT_CACHE_FILENAME)
+        signature = _transcript_signature(cfg)
+        cached = _load_transcript_cache(cache_path, signature)
+
+        if cached is not None:
+            transkrip_lengkap, data_segmen = cached
+            print(f"✅ Loaded cached transcript from {cache_path}, skipping Whisper.")
+        else:
+            transkrip_lengkap, data_segmen = engine.transcribe_video(
+                cfg.file_video_asli,
+                max_words_per_subtitle=cfg.max_kata_per_subtitle,
+                model_size=cfg.whisper_model,
+                device=cfg.whisper_device,
+                compute_type=cfg.whisper_compute_type,
+            )
+            _save_transcript_cache(cache_path, signature, transkrip_lengkap, data_segmen)
+            print(f"💾 Transcript cached at {cache_path}")
 
     # Step 3 — Gemini AI analysis
     gemini_output_path = os.path.join(cfg.outputs_dir, "gemini_response.json")
