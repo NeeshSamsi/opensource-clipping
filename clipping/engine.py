@@ -14,7 +14,7 @@ from faster_whisper import WhisperModel
 
 
 # ==============================================================================
-# TAHAP 1: DOWNLOAD VIDEO
+# STAGE 1: DOWNLOAD VIDEO
 # ==============================================================================
 
 def _build_ydl_format_selector(download_source_height: str | int) -> str:
@@ -78,8 +78,8 @@ def _download_gdrive(url: str, output_path: str) -> None:
     file_id = _extract_gdrive_file_id(url)
     if not file_id:
         raise RuntimeError(
-            f"Tidak dapat mengekstrak file ID dari URL Google Drive: {url}\n"
-            "      Format yang didukung:\n"
+            f"Could not extract the file ID from the Google Drive URL: {url}\n"
+            "      Supported formats:\n"
             "        • https://drive.google.com/file/d/FILE_ID/view\n"
             "        • https://drive.google.com/open?id=FILE_ID"
         )
@@ -87,6 +87,39 @@ def _download_gdrive(url: str, output_path: str) -> None:
     download_url = f"https://drive.google.com/uc?id={file_id}"
     print(f"      📥 File ID: {file_id}")
     gdown.download(download_url, output_path, quiet=False)
+
+
+def _ydl_progress_hook(d: dict) -> None:
+    """Render a single-line download progress bar from yt-dlp hook data.
+
+    yt-dlp downloads video and audio as separate streams, so this fires for
+    each one; a newline on "finished" keeps the two bars on their own lines.
+    """
+    status = d.get("status")
+    if status == "downloading":
+        total = d.get("total_bytes") or d.get("total_bytes_estimate")
+        downloaded = d.get("downloaded_bytes", 0)
+        speed = d.get("speed")
+        eta = d.get("eta")
+        spd = f"{speed / 1024 / 1024:4.1f}MB/s" if speed else "  --MB/s"
+        eta_s = f"{eta:>3}s" if eta is not None else " --s"
+        if total:
+            pct = downloaded / total * 100
+            filled = int(20 * downloaded / total)
+            bar = "█" * filled + " " * (20 - filled)
+            print(
+                f"\r      Download: {pct:3.0f}%|{bar}| "
+                f"{downloaded / 1048576:.0f}/{total / 1048576:.0f}MB {spd} ETA {eta_s}   ",
+                end="", flush=True,
+            )
+        else:
+            # Size unknown (live/streamed manifest) — show bytes + speed only.
+            print(
+                f"\r      Download: {downloaded / 1048576:.0f}MB {spd}   ",
+                end="", flush=True,
+            )
+    elif status == "finished":
+        print(flush=True)  # close off the bar line for this stream
 
 
 def download_video(
@@ -108,7 +141,7 @@ def download_video(
     platform_label = _PLATFORM_LABELS.get(source_platform, source_platform)
     uses_youtube_format = source_platform == "youtube"
 
-    print(f"[1/3] Mendownload video dari {platform_label}...")
+    print(f"[1/3] Downloading video from {platform_label}...")
     if download_source_height == "max":
         print("      🎯 Source quality: highest available", flush=True)
     else:
@@ -119,9 +152,9 @@ def download_video(
         _download_gdrive(url, output_path)
         if not os.path.exists(output_path):
             raise RuntimeError(
-                f"❌ Download dari Google Drive gagal — file tidak ditemukan di {output_path}"
+                f"❌ Download from Google Drive failed — file not found at {output_path}"
             )
-        print(f"      ✅ Video berhasil didownload dari Google Drive.", flush=True)
+        print(f"      ✅ Video successfully downloaded from Google Drive.", flush=True)
         return
 
     # --- Build yt-dlp options per platform ---
@@ -133,6 +166,7 @@ def download_video(
             "quiet": True,
             "merge_output_format": "mp4",
             "remote_components": ["ejs:github"],
+            "progress_hooks": [_ydl_progress_hook],
         }
     else:
         # TikTok / Instagram: ensure video and audio are merged
@@ -143,11 +177,12 @@ def download_video(
             "outtmpl": output_path,
             "quiet": True,
             "merge_output_format": "mp4",
+            "progress_hooks": [_ydl_progress_hook],
         }
 
     # --- Subtitle download — only supported for YouTube ---
     if use_dlp_subs and uses_youtube_format:
-        print("      Mencoba mencari subtitle bahasa otomatis (en / id)...")
+        print("      Trying to find automatic language subtitles (en / id)...")
         import glob
 
         for lang in ["en", "id"]:
@@ -157,45 +192,45 @@ def download_video(
                 "writeautomaticsub": True,
                 "subtitleslangs": [lang],
                 "subtitlesformat": "json3",
-                "skip_download": True,  # Hanya fokus download subtitle
+                "skip_download": True,  # Only focus on downloading subtitles
             })
 
             try:
                 with YoutubeDL(ydl_opts_subs) as ydl:
                     ydl.download([url])
 
-                # Cek apakah json3 untuk bahasa ini benar-benar terdownload
+                # Check whether the json3 for this language actually downloaded
                 if glob.glob(output_path.replace(".mp4", f".*.json3")):
-                    print(f"      ✅ Subtitle '{lang}' ditemukan. Melanjutkan ke video...")
+                    print(f"      ✅ Subtitle '{lang}' found. Continuing to the video...")
                     break
             except Exception as e:
-                print(f"      ⚠️ Gagal menarik subtitle '{lang}' ({e}). Mencoba opsi selanjutnya...")
+                print(f"      ⚠️ Failed to pull subtitle '{lang}' ({e}). Trying the next option...")
     elif use_dlp_subs and not uses_youtube_format:
-        print(f"      ℹ️ {platform_label} tidak menyediakan subtitle otomatis. Whisper akan digunakan.")
+        print(f"      ℹ️ {platform_label} does not provide automatic subtitles. Whisper will be used.")
 
-    # Jalankan download video terpisah dari urusan subtitle
+    # Run the video download separately from the subtitle handling
     with YoutubeDL(ydl_opts) as ydl:
         # Extra step to verify resolution before downloading
         try:
             info = ydl.extract_info(url, download=False)
             best_h = info.get("height", "unknown")
             v_codec = info.get("vcodec", "unknown")
-            print(f"      ✅ Mendownload: {best_h}p (Codec: {v_codec})", flush=True)
+            print(f"      ✅ Downloading: {best_h}p (Codec: {v_codec})", flush=True)
         except Exception as e:
-            print(f"      ⚠️ Gagal mengecek info detail: {e}", flush=True)
+            print(f"      ⚠️ Failed to check detailed info: {e}", flush=True)
 
         ydl.download([url])
 
     # --- Post-download verification ---
     if not os.path.exists(output_path):
         raise RuntimeError(
-            f"❌ Download dari {platform_label} gagal — file video tidak ditemukan di {output_path}.\n"
-            "      Pastikan URL valid dan bisa diakses secara publik."
+            f"❌ Download from {platform_label} failed — video file not found at {output_path}.\n"
+            "      Make sure the URL is valid and publicly accessible."
         )
 
 
 # ==============================================================================
-# TAHAP 2: TRANSKRIPSI WHISPER & JSON3 FALLBACK
+# STAGE 2: WHISPER TRANSCRIPTION & JSON3 FALLBACK
 # ==============================================================================
 
 def parse_youtube_json3_subs(json_path: str, max_words_per_subtitle: int = 5) -> tuple[str, list[dict]]:
@@ -205,7 +240,7 @@ def parse_youtube_json3_subs(json_path: str, max_words_per_subtitle: int = 5) ->
     """
     import json
 
-    print("[2/3] Memproses subtitle JSON3 dari YouTube...")
+    print("[2/3] Processing JSON3 subtitles from YouTube...")
     transkrip_lengkap = ""
     data_segmen = []
 
@@ -247,7 +282,7 @@ def parse_youtube_json3_subs(json_path: str, max_words_per_subtitle: int = 5) ->
                 clean_text = re.sub(r"[^\x00-\x7F\u00C0-\u017F\u2018-\u201F\u2026]", "", clean_text)
 
                 if clean_text:
-                    # Memecah teks menjadi kata tunggal agar karaoke per-kata bekerja seperti whisper
+                    # Split the text into single words so per-word karaoke works like whisper
                     words_in_seg = clean_text.split()
                     if not words_in_seg:
                         continue
@@ -294,7 +329,7 @@ def parse_youtube_json3_subs(json_path: str, max_words_per_subtitle: int = 5) ->
         return transkrip_lengkap, data_segmen
 
     except Exception as e:
-        print(f"⚠️ Gagal memparsing JSON3: {e}")
+        print(f"⚠️ Failed to parse JSON3: {e}")
         return "", []
 
 
@@ -315,15 +350,39 @@ def transcribe_video(
     data_segmen : list[dict]
         Word-level segments grouped by *max_words_per_subtitle*.
     """
-    print("[2/3] Memulai transkripsi dengan Faster-Whisper (Level Per-Kata)...")
+    print("[2/3] Starting transcription with Faster-Whisper (Per-Word Level)...")
 
+    # These steps run silently inside faster-whisper before any segment is
+    # produced, so we announce each phase — otherwise the first run on CPU
+    # (model download + full-audio decode) looks frozen for minutes.
+    print(
+        f"      ⏳ Loading Whisper model '{model_size}' ({device})"
+        " — the first run will download the model...",
+        flush=True,
+    )
     model = WhisperModel(model_size, device=device, compute_type=compute_type)
-    segments, _info = model.transcribe(video_path, beam_size=5, word_timestamps=True)
+
+    print("      ⏳ Decoding audio & extracting features (no output yet)...", flush=True)
+    segments, info = model.transcribe(video_path, beam_size=5, word_timestamps=True)
 
     transkrip_lengkap = ""
     data_segmen: list[dict] = []
 
+    # Progress bar driven by audio timestamps. faster-whisper streams segments
+    # lazily, so we advance the bar to each segment's end time as it arrives.
+    from tqdm import tqdm
+
+    total_dur = round(info.duration, 2)
+    progress = tqdm(
+        total=total_dur,
+        unit="s",
+        desc="      Transcribing",
+        bar_format="{desc}: {percentage:3.0f}%|{bar}| {n:.0f}/{total:.0f}s [{elapsed}<{remaining}]",
+    )
+
     for segment in segments:
+        # Clamp so floating-point drift past the reported duration can't overshoot.
+        progress.update(min(segment.end, total_dur) - progress.n)
         transkrip_lengkap += f"[{segment.start:.1f} - {segment.end:.1f}] {segment.text}\n"
 
         if segment.words:
@@ -348,11 +407,13 @@ def transcribe_video(
                     })
                     chunk_words = []
 
+    progress.update(total_dur - progress.n)  # snap to 100% on completion
+    progress.close()
     return transkrip_lengkap, data_segmen
 
 
 # ==============================================================================
-# TAHAP 3: ANALISIS GEMINI AI
+# STAGE 3: GEMINI AI ANALYSIS
 # ==============================================================================
 
 TARGET_ACCOUNTS = {
@@ -390,7 +451,7 @@ def _build_account_classification_prompt() -> str:
 MAX_ATTEMPTS = 10
 INITIAL_WAIT_SECONDS = 60
 WAIT_INCREMENT_SECONDS = 30
-REQUEST_TIMEOUT_MS = 15 * 60 * 1000  # 15 menit
+REQUEST_TIMEOUT_MS = 15 * 60 * 1000  # 15 minutes
 RETRYABLE_STATUS_CODES = {408, 429, 500, 502, 503, 504}
 
 
@@ -438,7 +499,7 @@ def _generate_json_with_retry(client, model, fallback_model, contents, config):
 
             text = getattr(response, "text", None)
             if not text or not text.strip():
-                raise ValueError("Gemini mengembalikan response.text kosong.")
+                raise ValueError("Gemini returned an empty response.text.")
 
             return json.loads(text)
 
@@ -448,7 +509,7 @@ def _generate_json_with_retry(client, model, fallback_model, contents, config):
             retryable = _is_retryable(exc)
 
             print(
-                f"[Gemini] Attempt {attempt}/{MAX_ATTEMPTS} gagal | "
+                f"[Gemini] Attempt {attempt}/{MAX_ATTEMPTS} failed | "
                 f"status={status_code} | error={exc}"
             )
 
@@ -456,12 +517,12 @@ def _generate_json_with_retry(client, model, fallback_model, contents, config):
                 break
 
             wait_seconds = INITIAL_WAIT_SECONDS + ((attempt - 1) * WAIT_INCREMENT_SECONDS)
-            print(f"[Gemini] Retry lagi dalam {wait_seconds} detik...")
+            print(f"[Gemini] Retrying again in {wait_seconds} seconds...")
             time.sleep(wait_seconds)
 
-    print(f"[Gemini] Percobaan dengan model utama ({model}) gagal.")
+    print(f"[Gemini] Attempt with the primary model ({model}) failed.")
     if fallback_model:
-        print(f"[Gemini] Mencoba satu kali lagi dengan fallback model ({fallback_model})...")
+        print(f"[Gemini] Trying one more time with the fallback model ({fallback_model})...")
         try:
             response = client.models.generate_content(
                 model=fallback_model,
@@ -470,19 +531,19 @@ def _generate_json_with_retry(client, model, fallback_model, contents, config):
             )
             text = getattr(response, "text", None)
             if not text or not text.strip():
-                raise ValueError("Gemini fallback mengembalikan response.text kosong.")
+                raise ValueError("Gemini fallback returned an empty response.text.")
 
             return json.loads(text)
         except Exception as exc_fallback:
-            print(f"[Gemini] Fallback model gagal | error={exc_fallback}")
+            print(f"[Gemini] Fallback model failed | error={exc_fallback}")
             raise RuntimeError(
-                f"Gagal memanggil Gemini utama & fallback. "
-                f"Laporan Utama status={status_code}, error={last_exc} | "
-                f"Laporan Fallback error={exc_fallback}"
+                f"Failed to call both the primary and fallback Gemini models. "
+                f"Primary report status={status_code}, error={last_exc} | "
+                f"Fallback report error={exc_fallback}"
             ) from exc_fallback
 
     raise RuntimeError(
-        f"Gagal memanggil Gemini setelah {MAX_ATTEMPTS} percobaan. Error terakhir: {last_exc}"
+        f"Failed to call Gemini after {MAX_ATTEMPTS} attempts. Last error: {last_exc}"
     ) from last_exc
 
 
@@ -823,10 +884,10 @@ def analyze_with_nvidia(transkrip_lengkap: str, cfg) -> list[dict]:
     """Analyze transcript using NVIDIA NIM API (OpenAI compatible)."""
     from openai import OpenAI
     
-    print(f"[3/3] Menganalisis Top {cfg.jumlah_clip} momen menggunakan NVIDIA ({cfg.nvidia_model})...")
-    
+    print(f"[3/3] Analyzing the Top {cfg.jumlah_clip} moments using NVIDIA ({cfg.nvidia_model})...")
+
     if not cfg.api_key_nvidia:
-        raise ValueError("NVIDIA_API_KEY tidak ditemukan di environment.")
+        raise ValueError("NVIDIA_API_KEY not found in the environment.")
 
     client = OpenAI(
         base_url="https://integrate.api.nvidia.com/v1",
@@ -1020,7 +1081,7 @@ def analyze_with_nvidia(transkrip_lengkap: str, cfg) -> list[dict]:
     if not isinstance(hasil, list):
         if isinstance(hasil, dict):
             return [hasil]
-        raise ValueError(f"Provider NVIDIA mengembalikan format non-list/dict: {type(hasil)}")
+        raise ValueError(f"The NVIDIA provider returned a non-list/dict format: {type(hasil)}")
         
     return hasil
 
@@ -1031,12 +1092,12 @@ def analyze_with_ai(transkrip_lengkap: str, cfg) -> list[dict]:
     
     if provider == "nvidia":
         if not cfg.api_key_nvidia:
-            print("⚠️ NVIDIA_API_KEY tidak ditemukan! Mencoba fallback ke Gemini...")
+            print("⚠️ NVIDIA_API_KEY not found! Trying to fall back to Gemini...")
         else:
             try:
                 return analyze_with_nvidia(transkrip_lengkap, cfg)
             except Exception as e:
-                print(f"⚠️ NVIDIA API gagal: {e}. Fallback ke Gemini...")
+                print(f"⚠️ NVIDIA API failed: {e}. Falling back to Gemini...")
     
     return analyze_with_gemini(transkrip_lengkap, cfg)
 
@@ -1049,7 +1110,7 @@ def analyze_with_gemini(
     import google.genai as genai
     from google.genai import types
 
-    print(f"[3/3] Menganalisis Top {cfg.jumlah_clip} momen terbaik menggunakan Gemini...")
+    print(f"[3/3] Analyzing the Top {cfg.jumlah_clip} best moments using Gemini...")
 
     prompt = get_analysis_prompt(transkrip_lengkap, cfg.jumlah_clip, cfg.durasi_hook, cfg=cfg)
 
