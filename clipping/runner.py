@@ -50,7 +50,7 @@ def run_pipeline(cfg) -> list[dict]:
 
     import glob
 
-    # Mencari file json3 apapun (karena bahasanya bisa .id.json3 atau .en.json3)
+    # Search for any json3 file (since the language can be .id.json3 or .en.json3)
     json3_files = glob.glob(cfg.file_video_asli.replace(".mp4", ".*.json3"))
     file_json3 = json3_files[0] if json3_files else None
 
@@ -66,7 +66,7 @@ def run_pipeline(cfg) -> list[dict]:
             )
             if transkrip_lengkap and data_segmen:
                 print(
-                    f"✅ Berhasil memparsing subtitle dari YouTube ({os.path.basename(file_json3)}), melewati proses Whisper."
+                    f"✅ Successfully parsed subtitles from YouTube ({os.path.basename(file_json3)}), skipping the Whisper process."
                 )
 
     if not transkrip_lengkap or not data_segmen:
@@ -82,7 +82,7 @@ def run_pipeline(cfg) -> list[dict]:
     gemini_output_path = os.path.join(cfg.outputs_dir, "gemini_response.json")
     
     if getattr(cfg, "load_gemini_json", False) and os.path.exists(gemini_output_path):
-        print(f"\n🔄 [3/3] Memuat data AI ({cfg.ai_provider}) dari file lokal: {gemini_output_path}")
+        print(f"\n🔄 [3/3] Loading AI data ({cfg.ai_provider}) from local file: {gemini_output_path}")
         with open(gemini_output_path, "r", encoding="utf-8") as f:
             hasil_json = json.load(f)
     else:
@@ -91,7 +91,7 @@ def run_pipeline(cfg) -> list[dict]:
         # Save raw gemini json for future loading/reproduction
         with open(gemini_output_path, "w", encoding="utf-8") as f:
             json.dump(hasil_json, f, indent=4, ensure_ascii=False)
-        print(f"💾 Raw AI response tersimpan di: {gemini_output_path}")
+        print(f"💾 Raw AI response saved to: {gemini_output_path}")
 
     # Step 4 — Metadata normalisation
     hasil_json = metadata.normalize_and_validate(hasil_json)
@@ -112,7 +112,7 @@ def run_pipeline(cfg) -> list[dict]:
                 if getattr(cfg, "use_split_screen", False)
                 else "Camera-Switch"
             )
-            print(f"\n🎙️ [{mode_label}] Menjalankan speaker diarization...")
+            print(f"\n🎙️ [{mode_label}] Running speaker diarization...")
             audio_path = cfg.file_video_asli.replace(".mp4", "_audio.wav")
             diarization_mod.extract_audio(cfg.file_video_asli, audio_path)
             num_speakers_arg = getattr(cfg, "diarization_num_speakers", 2)
@@ -126,7 +126,7 @@ def run_pipeline(cfg) -> list[dict]:
                 num_speakers_arg = "auto"
                 min_spk = max(1, max_faces)
                 max_spk = min_spk + 2
-                print(f"   ℹ️ Instruksi Pyannote: {min_spk} hingga {max_spk} speaker.")
+                print(f"   ℹ️ Pyannote instruction: {min_spk} to {max_spk} speakers.")
 
             diarization_data = diarization_mod.run_diarization(
                 audio_path,
@@ -139,8 +139,8 @@ def run_pipeline(cfg) -> list[dict]:
             if os.path.exists(audio_path):
                 os.remove(audio_path)
         except Exception as e:
-            print(f"⚠️ Diarization gagal: {e}")
-            print("   Fallback ke mode render biasa (tanpa split-screen).")
+            print(f"⚠️ Diarization failed: {e}")
+            print("   Falling back to normal render mode (without split-screen).")
             diarization_data = None
 
     # Step 6 — Video encoder & glitch
@@ -159,7 +159,7 @@ def run_pipeline(cfg) -> list[dict]:
 
     file_glitch_ts = None
     if cfg.use_hook_glitch:
-        print("⚙️ Menyiapkan Video Glitch Transisi...")
+        print("⚙️ Preparing Glitch Transition Video...")
         
         # Get source dimensions for proper glitch scaling
         import cv2
@@ -176,7 +176,7 @@ def run_pipeline(cfg) -> list[dict]:
 
     custom_hook_path = None
     if getattr(cfg, "hook_source", None):
-        print("\n🎣 Mengunduh sumber klip Hook kustom...")
+        print("\n🎣 Downloading custom Hook clip source...")
         custom_hook_path = hook_manager.download_custom_hook(cfg)
 
     for klip in sorted(hasil_json, key=lambda x: x["rank"]):
@@ -203,6 +203,6 @@ def run_pipeline(cfg) -> list[dict]:
         json.dump(render_manifest, f, ensure_ascii=False, indent=2)
 
     print(
-        f"\n💾 Render manifest disimpan ke {manifest_path} ({len(render_manifest)} item)"
+        f"\n💾 Render manifest saved to {manifest_path} ({len(render_manifest)} items)"
     )
     return render_manifest

@@ -27,7 +27,7 @@ def _load_studio_internal_module(file_name: str, module_alias: str):
     module_path = os.path.join(os.path.dirname(__file__), "studio", file_name)
     spec = importlib.util.spec_from_file_location(module_alias, module_path)
     if spec is None or spec.loader is None:
-        raise ImportError(f"Gagal memuat modul internal: {module_path}")
+        raise ImportError(f"Failed to load internal module: {module_path}")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module

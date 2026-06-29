@@ -106,7 +106,7 @@ def normalize_and_validate(hasil_json: list[dict]) -> list[dict]:
     semua_warning = []
     for item in hasil_json:
         if not isinstance(item, dict):
-            print(f"⚠️ Melewati item metadata yang tidak valid (bukan dict): {type(item)}")
+            print(f"⚠️ Skipping invalid metadata item (not a dict): {type(item)}")
             continue
 
         # 1. FLATTENING: If model put everything in a "metadata" key, bring it up
@@ -176,45 +176,45 @@ def normalize_and_validate(hasil_json: list[dict]) -> list[dict]:
         # --- Warnings ---
         warning = []
         if not item["title_indonesia"]:
-            warning.append("title_indonesia kosong")
+            warning.append("title_indonesia is empty")
         if len(item["title_indonesia"]) > 100:
-            warning.append("title_indonesia > 100 karakter")
+            warning.append("title_indonesia > 100 characters")
 
         if not item["title_inggris"]:
-            warning.append("title_inggris kosong")
+            warning.append("title_inggris is empty")
         if len(item["title_inggris"]) > 100:
-            warning.append("title_inggris > 100 karakter")
+            warning.append("title_inggris > 100 characters")
 
         if hashtag_count < 2 or hashtag_count > 3:
-            warning.append("jumlah hashtag bukan 2-3")
+            warning.append("hashtag count is not 2-3")
 
         if not item["description_hook"]:
-            warning.append("description_hook kosong")
+            warning.append("description_hook is empty")
         if not item["description_context"]:
-            warning.append("description_context kosong")
+            warning.append("description_context is empty")
         if len(item["keyword_tags"]) < 5:
-            warning.append("keyword_tags terlalu sedikit")
+            warning.append("keyword_tags too few")
 
         if not item["tiktok_title_id"]:
-            warning.append("tiktok_title_id kosong")
+            warning.append("tiktok_title_id is empty")
         if not item["tiktok_caption_id"]:
-            warning.append("tiktok_caption_id kosong")
+            warning.append("tiktok_caption_id is empty")
         if not item["tiktok_caption"]:
-            warning.append("tiktok_caption kosong")
+            warning.append("tiktok_caption is empty")
 
         if _looks_indonesian(item["title_inggris"]):
-            warning.append("title_inggris terdeteksi bukan English penuh")
+            warning.append("title_inggris detected as not fully English")
         if _looks_indonesian(item["description_hook"]):
-            warning.append("description_hook terdeteksi bukan English penuh")
+            warning.append("description_hook detected as not fully English")
         if _looks_indonesian(item["description_context"]):
-            warning.append("description_context terdeteksi bukan English penuh")
+            warning.append("description_context detected as not fully English")
         if _looks_indonesian(item["tiktok_caption"]):
-            warning.append("tiktok_caption terdeteksi bukan English penuh")
+            warning.append("tiktok_caption detected as not fully English")
 
         if item["tiktok_title_id"] and not _looks_indonesian(item["tiktok_title_id"]):
-            warning.append("tiktok_title_id terdeteksi bukan Bahasa Indonesia")
+            warning.append("tiktok_title_id detected as not Indonesian")
         if item["tiktok_caption_id"] and not _looks_indonesian(item["tiktok_caption_id"]):
-            warning.append("tiktok_caption_id terdeteksi bukan Bahasa Indonesia")
+            warning.append("tiktok_caption_id detected as not Indonesian")
 
         if warning:
             semua_warning.append((rank, warning))
@@ -247,8 +247,8 @@ def normalize_and_validate(hasil_json: list[dict]) -> list[dict]:
 
 def print_preview(hasil_json: list[dict]) -> None:
     """Print a human-readable metadata preview to stdout."""
-    print("✅ Preview metadata siap.")
-    print("Field tambahan yang dibuat:")
+    print("✅ Metadata preview ready.")
+    print("Additional fields created:")
     print("- youtube_title_final")
     print("- youtube_description_final")
     print("- youtube_tags_final")
@@ -257,12 +257,12 @@ def print_preview(hasil_json: list[dict]) -> None:
     print("- tiktok_caption_id_final")
     print()
 
-    print("===== PREVIEW DETAIL PER KLIP =====")
+    print("===== DETAILED PREVIEW PER CLIP =====")
     for item in hasil_json:
         klasifikasi = item.get("klasifikasi_akun", {})
         print(f"\n--- Rank {item['rank']} (Viral Score: {item.get('viral_score', '?')}) ---")
-        print(f"Akun Tujuan       : {klasifikasi.get('akun_tujuan', '')} ({klasifikasi.get('tipe_akun', '')})")
-        print(f"Alasan Akun       : {klasifikasi.get('alasan', '')}")
+        print(f"Target Account    : {klasifikasi.get('akun_tujuan', '')} ({klasifikasi.get('tipe_akun', '')})")
+        print(f"Account Reason    : {klasifikasi.get('alasan', '')}")
         print(f"Title ID          : {item['title_indonesia']}")
         print(f"Title EN          : {item['title_inggris']}")
         print(f"TikTok Title ID   : {item.get('tiktok_title_id_final', '')}")
@@ -279,4 +279,4 @@ def save_metadata_preview(hasil_json: list[dict], path: str = "metadata_preview.
     """Save normalized metadata to a JSON file."""
     with open(path, "w", encoding="utf-8") as f:
         json.dump(hasil_json, f, ensure_ascii=False, indent=2)
-    print(f"\n💾 Disimpan ke {path}")
+    print(f"\n💾 Saved to {path}")

@@ -162,14 +162,14 @@ def download_transition_raw(entry: dict, cfg) -> str | None:
             }
         ).download([entry["url"]])
     except Exception as e:
-        print(f"   ⚠️ [Transition] Download gagal ({entry['label']}): {e}")
+        print(f"   ⚠️ [Transition] Download failed ({entry['label']}): {e}")
         return None
 
     if os.path.exists(raw_path) and os.path.getsize(raw_path) > 10_000:
-        print(f"   ✅ [Transition] Tersimpan: {raw_path}")
+        print(f"   ✅ [Transition] Saved: {raw_path}")
         return raw_path
 
-    print(f"   ⚠️ [Transition] File terlalu kecil / gagal: {raw_path}")
+    print(f"   ⚠️ [Transition] File too small / failed: {raw_path}")
     return None
 
 
@@ -200,7 +200,7 @@ def download_all_transitions(cfg, types: list[str] | None = None) -> list[dict]:
             results.append(enriched)
 
     print(
-        f"   📦 [Transition] {len(results)}/{len(pool)} asset berhasil diunduh."
+        f"   📦 [Transition] {len(results)}/{len(pool)} assets downloaded successfully."
     )
     return results
 
@@ -326,5 +326,5 @@ def prepare_transition_clip(
         )
         return ts_path
     except subprocess.CalledProcessError as e:
-        print(f"   ⚠️ [Transition] FFmpeg gagal untuk {entry['label']}: {e}")
+        print(f"   ⚠️ [Transition] FFmpeg failed for {entry['label']}: {e}")
         return None

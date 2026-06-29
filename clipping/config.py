@@ -1,7 +1,7 @@
 """
 clipping.config — Master Configuration (Dashboard)
 
-Menyimpan semua default value dan membangun config dari CLI args.
+Stores all default values and builds the config from CLI args.
 """
 
 import argparse
@@ -16,17 +16,17 @@ except ImportError:
     pass
 
 # ==============================================================================
-# DEFAULT VALUES  (sama persis dengan Cell 0 notebook)
+# DEFAULT VALUES  (exactly the same as notebook Cell 0)
 # ==============================================================================
 
 BASE_DIR = os.getcwd()
 FONT_DIR = os.path.abspath(os.path.join(BASE_DIR, "custom_fonts"))
 
-# 1. PENGATURAN UTAMA
+# 1. MAIN SETTINGS
 JUMLAH_CLIP = 7
 PILIHAN_RASIO = "9:16"
 
-# 2. PENGATURAN KONTEN & HOOK
+# 2. CONTENT & HOOK SETTINGS
 MAX_KATA_PER_SUBTITLE = 5
 DURASI_HOOK = 3
 USE_BROLL = True
@@ -39,7 +39,7 @@ SWITCH_HOLD_DURATION = 2.0
 # Source Platform
 SOURCE_PLATFORM = "youtube"
 
-# 3. PENGATURAN SUBTITLE & TIPOGRAFI (ASS STYLE)
+# 3. SUBTITLE & TYPOGRAPHY SETTINGS (ASS STYLE)
 USE_ADVANCED_TEXT = False
 USE_ADVANCED_TEXT_ON_HOOK = False
 USE_KARAOKE_EFFECT = True
@@ -105,22 +105,22 @@ DAFTAR_FONT = {
     },
 }
 
-# Khusus 9:16 (Vertikal)
+# Specific to 9:16 (Vertical)
 ASS_ALIGN_916 = 2
 ASS_MARGIN_916 = 450
 ASS_FONT_916 = 90
 SCALE_KATA_KHUSUS_916 = ASS_FONT_916 + 120
 
-# Khusus 16:9 (Horizontal)
+# Specific to 16:9 (Horizontal)
 ASS_ALIGN_169 = 2
 ASS_MARGIN_169 = 70
 ASS_FONT_169 = 80
 SCALE_KATA_KHUSUS_169 = ASS_FONT_169 + 120
 
-# Warna Kata Khusus  (Format ASS: BGR -> &H[Blue][Green][Red]&)
+# Special Word Color  (ASS Format: BGR -> &H[Blue][Green][Red]&)
 WARNA_KATA_KHUSUS = "&HFFFFFF&"
 
-# 4. PENGATURAN ASSET EKSTERNAL
+# 4. EXTERNAL ASSET SETTINGS
 NAMA_FONT_THUMBNAIL = "Montserrat-Black.ttf"
 URL_FONT_THUMBNAIL = (
     "https://github.com/JulietaUla/Montserrat/raw/master/fonts/ttf/Montserrat-Black.ttf"
@@ -129,12 +129,12 @@ URL_FONT_THUMBNAIL = (
 URL_GLITCH_VIDEO = "https://www.youtube.com/watch?v=5nBcNRYmjs0"
 URL_MEDIAPIPE_MODEL = "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_full_range/float16/latest/blaze_face_full_range.tflite"
 
-# 5. PENGATURAN Auto-BGM & Audio Ducking
+# 5. Auto-BGM & Audio Ducking SETTINGS
 USE_AUTO_BGM = True
 BGM_BASE_VOLUME = 0.25
 BGM_MODE = "ducking"  # 'ducking' = sidechain compress, 'background' = constant volume mix
 
-# Daftar mood yang didukung (sesuai nama folder di assets/bgm/)
+# List of supported moods (matching folder names in assets/bgm/)
 BGM_MOODS = ["chill", "epic", "sad", "upbeat", "suspense"]
 BGM_DIR = os.path.abspath(os.path.join(BASE_DIR, "assets", "bgm"))
 
@@ -196,7 +196,7 @@ def _build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
 
-    # --- Pengaturan utama ---
+    # --- Main settings ---
     p.add_argument(
         "--url", "-u", required=False, default=None,
         help="Video URL to process (supports YouTube, TikTok, Instagram, Google Drive). Required unless --story-mode is used.",
@@ -239,7 +239,7 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Target output height for the render. Use 'source' to match the source video height, or a number (e.g. 1080, 1440).",
     )
 
-    # --- Konten & Hook ---
+    # --- Content & Hook ---
     p.add_argument(
         "--words-per-sub",
         type=int,
@@ -346,7 +346,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
 
 
-    # --- Subtitle & Tipografi ---
+    # --- Subtitle & Typography ---
     p.add_argument(
         "--font-style",
         default=GAYA_FONT_AKTIF,
@@ -651,14 +651,14 @@ def build_config(argv: list[str] | None = None) -> SimpleNamespace:
         api_key_gemini=os.environ.get("GOOGLE_API_KEY", ""),
         hf_token=os.environ.get("HF_TOKEN", ""),
         pexels_api_key=os.environ.get("PEXELS_API_KEY", ""),
-        # Pengaturan utama
+        # Main settings
         source_platform="tiktok" if args.tiktok else args.source,
         url_youtube=args.url,
         jumlah_clip=args.clips,
         pilihan_rasio=args.ratio,
         download_source_height=args.source_height,
         render_output_height=args.render_height,
-        # Konten & Hook
+        # Content & Hook
         max_kata_per_subtitle=args.words_per_sub,
         durasi_hook=args.hook_duration,
         hook_source=args.hook_source,
@@ -684,7 +684,7 @@ def build_config(argv: list[str] | None = None) -> SimpleNamespace:
         split_v_align=args.split_v_align,
         split_auto_zoom=args.split_auto_zoom,
         split_max_zoom=args.split_max_zoom,
-        # Subtitle & Tipografi
+        # Subtitle & Typography
         no_subs=args.no_subs,
         gaya_font_aktif=args.font_style,
         daftar_font=DAFTAR_FONT,
