@@ -418,9 +418,14 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Gemini fallback model name if main model fails",
     )
     p.add_argument(
-        "--load-gemini-json",
+        "--rerun-gemini",
         action="store_true",
-        help="Load the saved gemini_response.json from outputs dir to bypass the AI generation step (useful for debugging)",
+        help="Force a fresh AI analysis, ignoring the cached gemini_response.json (the cache is used by default when it matches the current video/model/clip count)",
+    )
+    p.add_argument(
+        "--rerun-whisper",
+        action="store_true",
+        help="Force a fresh transcription, ignoring the cached transcript (the cache is used by default when it matches the current video/model/word grouping)",
     )
     p.add_argument(
         "--box-face-detection",
@@ -720,7 +725,8 @@ def build_config(argv: list[str] | None = None) -> SimpleNamespace:
         nvidia_model=args.nvidia_model,
         gemini_model=args.gemini_model,
         gemini_fallback_model=args.gemini_fallback_model,
-        load_gemini_json=args.load_gemini_json,
+        rerun_gemini=args.rerun_gemini,
+        rerun_whisper=args.rerun_whisper,
         # Tracking Tuning
         track_step=args.track_step,
         track_deadzone=args.track_deadzone,

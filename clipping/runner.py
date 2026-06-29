@@ -7,6 +7,7 @@ Orchestrates the full clip generation pipeline.
 
 import json
 import os
+from datetime import datetime
 
 from . import diarization as diarization_mod
 from . import engine, metadata, studio, hook_manager
@@ -37,7 +38,7 @@ def _transcript_signature(cfg) -> dict:
 
 
 def _load_transcript_cache(path: str, signature: dict):
-    """Return (transcript, segments) from *path* if present and matching, else None."""
+    """Return (transcript, segments, cached_at) if present and matching, else None."""
     if not os.path.exists(path):
         return None
     try:
@@ -51,7 +52,7 @@ def _load_transcript_cache(path: str, signature: dict):
     segmen = payload.get("data_segmen")
     if not transkrip or not segmen:
         return None
-    return transkrip, segmen
+    return transkrip, segmen, payload.get("cached_at", "unknown time")
 
 
 def _save_transcript_cache(path: str, signature: dict, transkrip_lengkap: str, data_segmen: list) -> None:
@@ -60,6 +61,7 @@ def _save_transcript_cache(path: str, signature: dict, transkrip_lengkap: str, d
             json.dump(
                 {
                     "signature": signature,
+                    "cached_at": datetime.now().isoformat(timespec="seconds"),
                     "transkrip_lengkap": transkrip_lengkap,
                     "data_segmen": data_segmen,
                 },
@@ -68,6 +70,61 @@ def _save_transcript_cache(path: str, signature: dict, transkrip_lengkap: str, d
             )
     except OSError as e:
         print(f"⚠️ Failed to write transcript cache ({e}); continuing without it.")
+
+
+# Sidecar holding the AI-analysis cache signature + timestamp. gemini_response.json
+# itself is kept as the bare AI response (it is consumed elsewhere too), so the
+# validation metadata lives next to it rather than wrapping it.
+GEMINI_CACHE_META_FILENAME = "gemini_cache_meta.json"
+
+
+def _gemini_signature(cfg) -> dict:
+    """Identity of an AI analysis: which video + transcript model + clip count produced it."""
+    try:
+        video_size = os.path.getsize(cfg.file_video_asli)
+    except OSError:
+        video_size = 0
+    return {
+        "video_size": video_size,
+        "whisper_model": cfg.whisper_model,
+        "num_clips": getattr(cfg, "jumlah_clip", None),
+        "ai_model": getattr(cfg, "gemini_model", getattr(cfg, "ai_provider", "")),
+    }
+
+
+def _load_gemini_cache(response_path: str, meta_path: str, signature: dict):
+    """Return (response, cached_at) if a valid cached AI response exists, else None."""
+    if not (os.path.exists(response_path) and os.path.exists(meta_path)):
+        return None
+    try:
+        with open(meta_path, "r", encoding="utf-8") as f:
+            meta = json.load(f)
+        if meta.get("signature") != signature:
+            return None
+        with open(response_path, "r", encoding="utf-8") as f:
+            response = json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return None
+    return response, meta.get("cached_at", "unknown time")
+
+
+def _save_gemini_cache(response_path: str, meta_path: str, signature: dict, response) -> None:
+    # Raw AI response stays in gemini_response.json (bare, for reproduction and
+    # for other consumers); validation metadata goes in the sidecar.
+    with open(response_path, "w", encoding="utf-8") as f:
+        json.dump(response, f, indent=4, ensure_ascii=False)
+    try:
+        with open(meta_path, "w", encoding="utf-8") as f:
+            json.dump(
+                {
+                    "signature": signature,
+                    "cached_at": datetime.now().isoformat(timespec="seconds"),
+                },
+                f,
+                ensure_ascii=False,
+            )
+    except OSError as e:
+        print(f"⚠️ Failed to write AI cache metadata ({e}); the AI step will re-run next time.")
 
 
 def run_pipeline(cfg) -> list[dict]:
@@ -132,11 +189,15 @@ def run_pipeline(cfg) -> list[dict]:
         # (e.g. after fixing a later-stage crash) doesn't repeat transcription.
         cache_path = os.path.join(cfg.outputs_dir, TRANSCRIPT_CACHE_FILENAME)
         signature = _transcript_signature(cfg)
-        cached = _load_transcript_cache(cache_path, signature)
+        cached = (
+            None
+            if getattr(cfg, "rerun_whisper", False)
+            else _load_transcript_cache(cache_path, signature)
+        )
 
         if cached is not None:
-            transkrip_lengkap, data_segmen = cached
-            print(f"✅ Loaded cached transcript from {cache_path}, skipping Whisper.")
+            transkrip_lengkap, data_segmen, cached_at = cached
+            print(f"✅ Transcript cache hit (cached at {cached_at}) — skipping Whisper.")
         else:
             transkrip_lengkap, data_segmen = engine.transcribe_video(
                 cfg.file_video_asli,
@@ -148,19 +209,22 @@ def run_pipeline(cfg) -> list[dict]:
             _save_transcript_cache(cache_path, signature, transkrip_lengkap, data_segmen)
             print(f"💾 Transcript cached at {cache_path}")
 
-    # Step 3 — Gemini AI analysis
+    # Step 3 — Gemini AI analysis (cached by default; --rerun-gemini forces fresh)
     gemini_output_path = os.path.join(cfg.outputs_dir, "gemini_response.json")
-    
-    if getattr(cfg, "load_gemini_json", False) and os.path.exists(gemini_output_path):
-        print(f"\n🔄 [3/3] Loading AI data ({cfg.ai_provider}) from local file: {gemini_output_path}")
-        with open(gemini_output_path, "r", encoding="utf-8") as f:
-            hasil_json = json.load(f)
+    gemini_meta_path = os.path.join(cfg.outputs_dir, GEMINI_CACHE_META_FILENAME)
+    gemini_signature = _gemini_signature(cfg)
+    cached_gemini = (
+        None
+        if getattr(cfg, "rerun_gemini", False)
+        else _load_gemini_cache(gemini_output_path, gemini_meta_path, gemini_signature)
+    )
+
+    if cached_gemini is not None:
+        hasil_json, gemini_cached_at = cached_gemini
+        print(f"✅ AI analysis cache hit (cached at {gemini_cached_at}) — skipping {cfg.ai_provider}.")
     else:
         hasil_json = engine.analyze_with_ai(transkrip_lengkap, cfg)
-        
-        # Save raw gemini json for future loading/reproduction
-        with open(gemini_output_path, "w", encoding="utf-8") as f:
-            json.dump(hasil_json, f, indent=4, ensure_ascii=False)
+        _save_gemini_cache(gemini_output_path, gemini_meta_path, gemini_signature, hasil_json)
         print(f"💾 Raw AI response saved to: {gemini_output_path}")
 
     # Step 4 — Metadata normalisation
